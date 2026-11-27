@@ -10,7 +10,7 @@ macOS 原生归档工具 · 原 peazip-macos 项目的延续
 
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-1B2534?style=flat-square)
 ![Swift 6](https://img.shields.io/badge/Swift-6.4-2C7BEA?style=flat-square)
-![version 0.47](https://img.shields.io/badge/version-0.47-0B4FC0?style=flat-square)
+![version 0.48](https://img.shields.io/badge/version-0.48-0B4FC0?style=flat-square)
 ![license MIT](https://img.shields.io/badge/license-MIT-4C8C4A?style=flat-square)
 
 </div>

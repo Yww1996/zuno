@@ -438,8 +438,12 @@ enum ArchiveEngine {
             for line in block.split(separator: "\n") {
                 guard let eq = line.firstIndex(of: "=") else { continue }
                 let k = line[..<eq].trimmingCharacters(in: .whitespaces)
-                let v = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-                dict[k] = v
+                let value = line[line.index(after: eq)...]
+                // Remove only 7-Zip's separator space for paths. Trimming the
+                // filename itself changes the operand used for selected extraction.
+                dict[k] = k == "Path"
+                    ? String(value.first == " " ? value.dropFirst() : value)
+                    : value.trimmingCharacters(in: .whitespaces)
             }
             guard let path = dict["Path"], !path.isEmpty else { continue }
             if dict["Type"] != nil { continue }                  // archive summary block

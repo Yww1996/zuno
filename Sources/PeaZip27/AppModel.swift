@@ -479,6 +479,26 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func extractSelectionToDesktop(_ urls: Set<URL>) {
+        guard !busy, let archive = openArchive else { return }
+        let paths = items.filter { urls.contains($0.url) }.compactMap(\.entryPath)
+        guard !paths.isEmpty else { return }
+
+        run(title: "解压 \(paths.count) 项到桌面") { line, progress in
+            do {
+                guard let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                try ArchiveEntryExport.export(archive, paths: paths, to: desktop, onProgress: progress) { output in
+                    line("已保存：\(output.lastPathComponent)")
+                }
+                return .init(output: "", status: 0)
+            } catch {
+                return .init(output: error.localizedDescription, status: 1)
+            }
+        }
+    }
+
     // MARK: - Editing an archive in place
 
     var canModifyOpenArchive: Bool {

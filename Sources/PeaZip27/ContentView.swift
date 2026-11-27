@@ -1,12 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Surfaced to Finder when a drag-out extraction fails, so the drop is rejected instead
-/// of silently producing nothing.
-struct DragFailure: LocalizedError {
-    var errorDescription: String? { "从压缩包中提取失败" }
-}
-
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var sidebarSel: URL?
@@ -221,6 +215,8 @@ struct ContentView: View {
                         model.open(item)
                     }
                     Button("解压选中项…") { model.extractFromOpenArchive(selectedOnly: true) }
+                    Button("解压选中项到桌面") { model.extractSelectionToDesktop(urls) }
+                        .disabled(model.busy)
                     Button("从压缩包删除…", role: .destructive) {
                         model.deleteSelectedFromOpenArchive()
                     }
@@ -328,8 +324,7 @@ private final class FileRowDragView: NSView, NSDraggingSource {
                 guard let archive = model.openArchive, let inner = entry.entryPath else { continue }
                 let promise = ArchiveDragPromise(archive: archive, inner: inner, item: entry, model: model)
                 promises.append(promise)
-                writer = RetainedFilePromiseProvider(fileType: entry.isDirectory ? UTType.folder.identifier :
-                    (UTType(filenameExtension: entry.url.pathExtension)?.identifier ?? UTType.data.identifier),
+                writer = RetainedFilePromiseProvider(fileType: ArchiveEntryExport.promiseType(for: entry),
                     promise: promise)
             } else {
                 writer = entry.url as NSURL
@@ -403,37 +398,23 @@ private final class ArchiveDragPromise: NSObject, NSFilePromiseProviderDelegate 
 
     func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, writePromiseTo destination: URL,
                              completionHandler: @escaping (Error?) -> Void) {
-        let fm = FileManager.default
-        let scratch = fm.temporaryDirectory.appendingPathComponent("peazip-drag-\(UUID().uuidString)")
-        defer {
-            try? fm.removeItem(at: scratch)
-            DispatchQueue.main.async { [weak model] in model?.reportProgress(-1, nil) }
+        let name = item.name
+        let report: (Int, String?) -> Void = { [weak model] percent, detail in
+            DispatchQueue.main.async { model?.reportProgress(percent, detail) }
         }
-        // Snapshot the archive and path at mouse-down: navigating to another archive
-        // during a drag must never change which file Finder receives.
-        guard !inner.hasPrefix("/"), !inner.split(separator: "/").contains(".."),
-              ArchiveEngine.isAvailable else {
-            completionHandler(DragFailure())
-            return
-        }
+        report(0, name)
+        defer { report(-1, nil) }
         do {
-            try fm.createDirectory(at: scratch, withIntermediateDirectories: true)
-            DispatchQueue.main.async { [weak model] in model?.reportProgress(0, self.item.name) }
-            let result = ArchiveEngine.extractEntries(archive, paths: [inner], to: scratch, onLine: nil,
-                onProgress: { [weak model] percent, name in
-                    DispatchQueue.main.async { model?.reportProgress(percent, name) }
-                })
-            let source = scratch.appendingPathComponent(inner)
-            guard result.ok, fm.fileExists(atPath: source.path) else {
-                appLog.error("拖出失败 \(self.inner, privacy: .public): \(result.output.suffix(200), privacy: .public)")
-                completionHandler(DragFailure())
-                return
+            try ArchiveEntryExport.withExtractedEntry(archive, path: inner, onProgress: report) { source in
+                try ArchiveEntryExport.deliverPromise(source, to: destination)
             }
-            // Finder supplies the final file URL, including any collision resolution.
-            // copyItem refuses to overwrite an existing destination.
-            try fm.copyItem(at: source, to: destination)
             completionHandler(nil)
         } catch {
+            let detail = error.localizedDescription
+            appLog.error("拖出失败: \(detail, privacy: .private)")
+            DispatchQueue.main.async { [weak model] in
+                model?.opSheet = OpSheet(title: "无法拖出「\(name)」", detail: detail)
+            }
             completionHandler(error)
         }
     }
